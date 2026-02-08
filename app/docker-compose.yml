@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hackaton-soat-processor:latest
+    container_name: video-processor-worker
+    restart: unless-stopped
+    environment:
+      # AWS Configuration
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      
+      # SQS Queues
+      QUEUE_INPUT: ${QUEUE_INPUT}
+      QUEUE_OUTPUT: ${QUEUE_OUTPUT}
+      
+      # S3 Storage
+      STORAGE_OUTPUT: ${STORAGE_OUTPUT}
+    volumes:
+      # Volume para arquivos temporários (opcional, para debug)
+      - ./temp:/app/temp
+    networks:
+      - processor-network
+    # Recursos (ajuste conforme necessário)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    # Logs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  processor-network:
+    driver: bridge

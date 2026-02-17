@@ -95,12 +95,10 @@ jobs:
         id: image
         run: echo "name=$(echo ${{ env.DOCKER_IMAGE_NAME }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
-          
       - name: Docker Build
         run: |
-          cd ${{ env.GO_PROJECT_PATH }}
-
-          docker build -t ${{ env.DOCKER_IMAGE_NAME }}:test-only .
+          cd ./app
+          docker build -t ${{ steps.image.outputs.name }}:test-only .
 
       - name: Trivy Scan
         uses: aquasecurity/trivy-action@master

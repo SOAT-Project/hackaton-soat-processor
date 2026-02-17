@@ -1,0 +1,111 @@
+name: CI Go Test & Docker Build Validation
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [ opened, synchronize, reopened ]
+
+env:
+  GO_VERSION: '1.25'
+  DOCKER_IMAGE_NAME: ${{ github.repository }}
+  GO_PROJECT_PATH: ./app
+  SONAR_PROJECT_KEY: 'SOAT-Project_hackaton-soat-processor'
+
+jobs:
+
+  test:
+    name: Test Code
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }} 
+
+      - name: Go Mod Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ hashFiles('${{ env.GO_PROJECT_PATH }}/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-${{ env.GO_VERSION }}-
+
+      - name: Download Go dependencies
+        run: go mod download
+        working-directory: ${{ env.GO_PROJECT_PATH }}
+
+      - name: Run Unit Tests And Generate Coverage
+        run: go test -coverprofile=coverage.out -covermode=atomic ./...
+        working-directory: ${{ env.GO_PROJECT_PATH }}
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage-report
+          path: ${{ env.GO_PROJECT_PATH }}/coverage.out
+          retention-days: 1
+
+  sonarqube:
+    name: SonarQube
+    runs-on: ubuntu-latest
+    needs: [ test ]
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+    
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: go-coverage-report
+          path: ${{ env.GO_PROJECT_PATH }} # Baixa o arquivo 'coverage.out' para a pasta 'app/'
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: app
+          qualityGate: true 
+
+      - name: SonarQube Quality Gate check
+        id: sonarqube-quality-gate-check
+        uses: sonarsource/sonarqube-quality-gate-action@master
+        with:
+          pollingTimeoutSec: 600
+          scanMetadataReportFile: ${{ env.GO_PROJECT_PATH }}/.scannerwork/report-task.txt
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  docker:
+    name: Docker
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+          
+      - name: Docker Build
+        run: |
+          cd ${{ env.GO_PROJECT_PATH }}
+
+          docker build -t ${{ env.DOCKER_IMAGE_NAME }}:test-only .
+
+      - name: Trivy Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.DOCKER_IMAGE_NAME }}:test-only
+          severity: MEDIUM # UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: 1
+
+      - name: Cleanup Images
+        if: always()
+        run: docker rmi ${{ env.DOCKER_IMAGE_NAME }}:test-only || true

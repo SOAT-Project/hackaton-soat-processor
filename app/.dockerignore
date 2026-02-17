@@ -1,0 +1,53 @@
+# Arquivos Git
+.git
+.gitignore
+
+# Diretórios temporários
+temp/
+outputs/
+uploads/
+
+# Arquivos de ambiente
+.env
+.env.local
+.env.*.local
+
+# Arquivos de teste
+*_test.go
+**/*_test.go
+
+# Cobertura de testes
+coverage.out
+*.coverprofile
+
+# Binários compilados
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+worker
+*.test
+*.out
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentação de desenvolvimento
+README.md
+ARCHITECTURE.md
+LICENSE
+
+# Logs
+*.log
+
+# Node modules (se houver frontend)
+node_modules/
+
+# Dependências Go (já estão no go.mod/go.sum)
+vendor/

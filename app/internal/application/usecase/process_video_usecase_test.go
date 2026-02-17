@@ -13,8 +13,9 @@ import (
 // Mock implementations for testing
 
 type mockStoragePort struct {
-	getObjectFunc func(ctx context.Context, bucket, key string) (io.ReadCloser, error)
-	putObjectFunc func(ctx context.Context, bucket, key string, body io.Reader) (string, error)
+	getObjectFunc    func(ctx context.Context, bucket, key string) (io.ReadCloser, error)
+	putObjectFunc    func(ctx context.Context, bucket, key string, body io.Reader) (string, error)
+	deleteObjectFunc func(ctx context.Context, bucket, key string) error
 }
 
 func (m *mockStoragePort) GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
@@ -29,6 +30,13 @@ func (m *mockStoragePort) PutObject(ctx context.Context, bucket, key string, bod
 		return m.putObjectFunc(ctx, bucket, key, body)
 	}
 	return key, nil
+}
+
+func (m *mockStoragePort) DeleteObject(ctx context.Context, bucket, key string) error {
+	if m.deleteObjectFunc != nil {
+		return m.deleteObjectFunc(ctx, bucket, key)
+	}
+	return nil
 }
 
 type mockMessagePort struct {

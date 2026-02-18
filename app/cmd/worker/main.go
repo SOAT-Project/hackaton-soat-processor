@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,11 +13,13 @@ import (
 	"github.com/SOAT-Project/hackaton-soat-processor/internal/application/domain"
 	"github.com/SOAT-Project/hackaton-soat-processor/internal/application/usecase"
 	"github.com/SOAT-Project/hackaton-soat-processor/pkg/message"
+	"github.com/SOAT-Project/hackaton-soat-processor/pkg/observability"
 	"github.com/SOAT-Project/hackaton-soat-processor/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"go.uber.org/zap"
 )
 
 var (
@@ -29,31 +30,58 @@ var (
 )
 
 func main() {
-	log.Println("🎬 Starting Video Processor Worker")
+	// Initialize logger
+	environment := getEnv("ENVIRONMENT", "development")
+	if err := observability.InitLogger(environment); err != nil {
+		fmt.Printf("Failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer observability.Sync()
 
-	// Valida variáveis de ambiente
-	if err := validateEnvVars(); err != nil {
-		log.Fatalf("Environment validation failed: %v", err)
+	logger := observability.GetLogger()
+	logger.Info("starting video processor worker",
+		zap.String("environment", environment),
+		zap.String("version", "1.0.0"),
+	)
+
+	// Start metrics server
+	metricsPort := 8080
+	metricsServer := observability.NewMetricsServer(metricsPort)
+	if err := metricsServer.Start(); err != nil {
+		logger.Fatal("failed to start metrics server", zap.Error(err))
 	}
 
-	// Configura AWS
+	// Validate environment variables
+	if err := validateEnvVars(); err != nil {
+		logger.Fatal("environment validation failed", zap.Error(err))
+	}
+
+	logger.Info("configuration loaded",
+		zap.String("input_queue", inputQueueURL),
+		zap.String("output_queue", outputQueueURL),
+		zap.String("output_bucket", outputBucket),
+		zap.String("region", region),
+		zap.Int("metrics_port", metricsPort),
+	)
+
+	// Configure AWS
 	ctx := context.Background()
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {
-		log.Fatalf("Failed to load AWS config: %v", err)
+		logger.Fatal("failed to load AWS config", zap.Error(err))
 	}
 
-	// Inicializa os serviços e adapters
+	// Initialize services and adapters
 	storageService := storage.NewS3Client(cfg)
 	storagePort := adapter.NewStorageAdapter(storageService)
 
 	messageService := message.NewSQSClient(cfg)
 	messagePort := adapter.NewMessageAdapter(messageService)
 
-	// Usa /tmp que sempre tem permissão de escrita para todos
+	// Use /tmp which always has write permission for all users
 	videoProcessor := adapter.NewFFmpegVideoProcessor("/tmp/video-processor")
 
-	// Inicializa o use case
+	// Initialize use case
 	processVideoUseCase := usecase.NewProcessVideoUseCase(
 		storagePort,
 		messagePort,
@@ -62,31 +90,28 @@ func main() {
 		outputQueueURL,
 	)
 
-	// Inicializa o cliente SQS para consumo
+	// Initialize SQS client for message consumption
 	sqsClient := sqs.NewFromConfig(cfg)
 
-	// Canal para graceful shutdown
+	// Channel for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	log.Printf("✅ Worker initialized successfully")
-	log.Printf("📥 Input Queue: %s", inputQueueURL)
-	log.Printf("📤 Output Queue: %s", outputQueueURL)
-	log.Printf("🪣 Output Bucket: %s", outputBucket)
-	log.Println("⏳ Waiting for messages...")
+	logger.Info("worker initialized successfully")
+	logger.Info("ready to process messages")
 
-	// Loop principal de processamento
+	// Main processing loop
 	running := true
 	for running {
 		select {
 		case <-sigChan:
-			log.Println("🛑 Shutdown signal received, stopping worker...")
+			logger.Info("shutdown signal received, stopping worker")
 			running = false
 			continue
 		default:
 		}
 
-		// Recebe mensagens da fila
+		// Receive messages from queue
 		res, err := sqsClient.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
 			QueueUrl:            aws.String(inputQueueURL),
 			MaxNumberOfMessages: 1,
@@ -95,23 +120,46 @@ func main() {
 		})
 
 		if err != nil {
-			log.Printf("❌ Error receiving message: %v", err)
+			logger.Warn("error receiving message", zap.Error(err))
+			observability.RecordSQSOperation("receive", false)
 			time.Sleep(5 * time.Second)
 			continue
 		}
 
-		// Processa cada mensagem
+		observability.RecordSQSOperation("receive", true)
+
+		// Process each message
 		for _, msg := range res.Messages {
 			if err := processMessage(ctx, processVideoUseCase, sqsClient, msg); err != nil {
-				log.Printf("❌ Error processing message: %v", err)
+				logger.Error("error processing message", zap.Error(err))
+				observability.RecordMessageProcessed(false)
+			} else {
+				observability.RecordMessageProcessed(true)
 			}
 		}
 	}
 
-	log.Println("👋 Worker stopped gracefully")
+	// Graceful shutdown
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := metricsServer.Stop(shutdownCtx); err != nil {
+		logger.Error("error stopping metrics server", zap.Error(err))
+	}
+
+	logger.Info("worker stopped gracefully")
+}
+
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
 }
 
 func validateEnvVars() error {
+	logger := observability.GetLogger()
+
 	if inputQueueURL == "" {
 		return fmt.Errorf("QUEUE_INPUT environment variable is required")
 	}
@@ -123,15 +171,16 @@ func validateEnvVars() error {
 	}
 	if region == "" {
 		region = "us-east-1" // Default
-		log.Printf("⚠️  AWS_REGION not set, using default: %s", region)
+		logger.Warn("AWS_REGION not set, using default", zap.String("region", region))
 	}
 	return nil
 }
 
 func processMessage(ctx context.Context, useCase *usecase.ProcessVideoUseCase, sqsClient *sqs.Client, msg types.Message) error {
-	log.Printf("📨 Received message: ID=%s", *msg.MessageId)
+	logger := observability.GetLogger().With(zap.String("message_id", *msg.MessageId))
+	logger.Info("received message from queue")
 
-	// Parse da mensagem
+	// Parse message
 	var request struct {
 		ProcessID   string `json:"process_id"`
 		VideoBucket string `json:"video_bucket"`
@@ -139,16 +188,19 @@ func processMessage(ctx context.Context, useCase *usecase.ProcessVideoUseCase, s
 	}
 
 	if err := json.Unmarshal([]byte(*msg.Body), &request); err != nil {
-		log.Printf("❌ Failed to parse message: %v", err)
-		// Deleta mensagem inválida da fila
+		logger.Error("failed to parse message", zap.Error(err))
+		// Delete invalid message from queue
 		deleteMessage(ctx, sqsClient, msg)
 		return err
 	}
 
-	log.Printf("🎥 Processing video: process_id=%s, bucket=%s, key=%s",
-		request.ProcessID, request.VideoBucket, request.VideoKey)
+	logger.Info("message parsed successfully",
+		zap.String("process_id", request.ProcessID),
+		zap.String("video_bucket", request.VideoBucket),
+		zap.String("video_key", request.VideoKey),
+	)
 
-	// Cria o domínio
+	// Create domain object
 	videoProcess := domain.VideoProcess{
 		ProcessID:   request.ProcessID,
 		VideoBucket: request.VideoBucket,
@@ -156,34 +208,31 @@ func processMessage(ctx context.Context, useCase *usecase.ProcessVideoUseCase, s
 		CreatedAt:   time.Now(),
 	}
 
-	// Executa o use case
-	startTime := time.Now()
+	// Execute use case
 	err := useCase.Execute(ctx, videoProcess)
-	duration := time.Since(startTime)
 
-	if err != nil {
-		log.Printf("❌ Processing failed for process_id=%s: %v (duration: %s)",
-			request.ProcessID, err, duration)
-	} else {
-		log.Printf("✅ Processing completed for process_id=%s (duration: %s)",
-			request.ProcessID, duration)
-	}
-
-	// Deleta mensagem da fila (tanto em sucesso quanto em erro, pois já enviamos a notificação)
+	// Delete message from queue (both on success and error, since we already sent notification)
 	deleteMessage(ctx, sqsClient, msg)
 
 	return err
 }
 
 func deleteMessage(ctx context.Context, sqsClient *sqs.Client, msg types.Message) {
+	logger := observability.GetLogger()
+
 	_, err := sqsClient.DeleteMessage(ctx, &sqs.DeleteMessageInput{
 		QueueUrl:      aws.String(inputQueueURL),
 		ReceiptHandle: msg.ReceiptHandle,
 	})
 
 	if err != nil {
-		log.Printf("⚠️  Failed to delete message from queue: %v", err)
+		logger.Warn("failed to delete message from queue",
+			zap.String("message_id", *msg.MessageId),
+			zap.Error(err),
+		)
+		observability.RecordSQSOperation("delete", false)
 	} else {
-		log.Printf("🗑️  Message deleted from queue: ID=%s", *msg.MessageId)
+		logger.Debug("message deleted from queue", zap.String("message_id", *msg.MessageId))
+		observability.RecordSQSOperation("delete", true)
 	}
 }

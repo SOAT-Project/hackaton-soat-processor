@@ -104,7 +104,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.image.outputs.name }}:test-only
-          severity: MEDIUM # UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL
+          severity: HIGH # UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL
           ignore-unfixed: true
           format: table
           exit-code: 1

@@ -8,7 +8,13 @@ spec:
     - name: eg
       namespace: envoy-gateway-system
   rules:
-    - backendRefs:
+    - filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
         - group: ""
           kind: Service
           name: processor-service

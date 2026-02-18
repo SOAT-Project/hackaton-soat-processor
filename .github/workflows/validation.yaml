@@ -6,7 +6,7 @@ on:
     types: [ opened, synchronize, reopened ]
 
 env:
-  GO_VERSION: '1.25'
+  GO_VERSION: '1.24'
   DOCKER_IMAGE_NAME: ${{ github.repository }}
   GO_PROJECT_PATH: ./app
   SONAR_PROJECT_KEY: 'SOAT-Project_hackaton-soat-processor'
@@ -104,7 +104,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.image.outputs.name }}:test-only
-          severity: CRITICAL # UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL
+          severity: MEDIUM # UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL
           ignore-unfixed: true
           format: table
           exit-code: 1

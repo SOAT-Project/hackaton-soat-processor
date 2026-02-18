@@ -1,0 +1,66 @@
+name: "Deploy"
+
+on:
+  push:
+    branches: [ main, release, develop ]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+
+  set_environment:
+    runs-on: ubuntu-latest
+    outputs:
+      mapped_environment: ${{ steps.branch_map.outputs.environment }}
+
+    steps:
+      - id: branch_map
+        run: |
+          BRANCH_NAME="${{ github.ref_name }}"
+          ENVIRONMENT=""
+
+          case "$BRANCH_NAME" in
+            "develop")
+              ENVIRONMENT="dev"
+              ;;
+            "release")
+              ENVIRONMENT="hom"
+              ;;
+            "main")
+              ENVIRONMENT="prod"
+              ;;
+            *)
+              echo "Branch $BRANCH_NAME não mapeada para um ambiente de deploy. Abortando."
+              exit 1
+              ;;
+          esac
+
+          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          echo "Ambiente mapeado: $ENVIRONMENT"
+
+  build:
+    needs: set_environment
+    if: success() && needs.set_environment.outputs.mapped_environment != ''
+    uses: ./.github/workflows/docker.yaml
+    with:
+      image_name: soatproject/fastfood-soat-backstage-service
+      image_tag: latest
+    secrets:
+      DOCKERHUB_LOGIN: ${{ secrets.DOCKERHUB_LOGIN }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  deploy:
+    needs: [set_environment, build]
+    if: success() && needs.set_environment.outputs.mapped_environment != ''
+    uses: ./.github/workflows/terraform.yaml
+    with:
+      environment: ${{ needs.set_environment.outputs.mapped_environment }}
+    secrets:
+      aws-assume-role-arn: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+      aws-region: ${{ secrets.AWS_REGION }}
+      aws-statefile-s3-bucket: ${{ secrets.AWS_STATEFILE_S3_BUCKET }}
+      aws-lock-dynamodb-table: ${{ secrets.AWS_LOCK_DYNAMODB_TABLE }}
+      aws-access-key: ${{ secrets.AWS_APP_ACCESS_KEY }}
+      aws-secret-key: ${{ secrets.AWS_APP_SECRET_KEY }}

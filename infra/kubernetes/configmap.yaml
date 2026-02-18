@@ -4,6 +4,6 @@ metadata:
   name: processor-configmap
   namespace: processor
 data:
-  QUEUE_INPUT: "fastfood-soat-terraform-order-to-kitchen.fifo"
-  QUEUE_OUTPUT: "fastfood-soat-terraform-kitchen-to-order"
-  STORAGE_OUTPUT: "fastfood-soat-terraform-processed-videos"
+  QUEUE_INPUT: "hackaton-soat-process"
+  QUEUE_OUTPUT: "hackaton-soat-processed"
+  STORAGE_OUTPUT: "hackaton-soat-storage"

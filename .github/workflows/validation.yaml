@@ -90,22 +90,25 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v4
-          
+
+      - name: Set image name
+        id: image
+        run: echo "name=$(echo ${{ env.DOCKER_IMAGE_NAME }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
       - name: Docker Build
         run: |
-          cd ${{ env.GO_PROJECT_PATH }}
-
-          docker build -t ${{ env.DOCKER_IMAGE_NAME }}:test-only .
+          cd ./app
+          docker build -t ${{ steps.image.outputs.name }}:test-only .
 
       - name: Trivy Scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.DOCKER_IMAGE_NAME }}:test-only
-          severity: MEDIUM # UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL
+          image-ref: ${{ steps.image.outputs.name }}:test-only
+          severity: HIGH # UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL
           ignore-unfixed: true
           format: table
           exit-code: 1
 
       - name: Cleanup Images
         if: always()
-        run: docker rmi ${{ env.DOCKER_IMAGE_NAME }}:test-only || true
+        run: docker rmi ${{ steps.image.outputs.name }}:test-only || true

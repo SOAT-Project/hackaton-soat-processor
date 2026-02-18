@@ -20,6 +20,11 @@ services:
       
       # S3 Storage
       STORAGE_OUTPUT: ${STORAGE_OUTPUT}
+      
+      # Environment
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+    ports:
+      - "8080:8080"
     volumes:
       # Volume para arquivos temporários (opcional, para debug)
       - ./temp:/app/temp
@@ -40,7 +45,59 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: video-processor-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - processor-network
+    depends_on:
+      - worker
+
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: video-processor-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin123}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: http://localhost:3000
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - processor-network
+    depends_on:
+      - prometheus
 
 networks:
   processor-network:
     driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:

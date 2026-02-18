@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/SOAT-Project/hackaton-soat-processor/internal/application/domain"
 	"github.com/SOAT-Project/hackaton-soat-processor/internal/port"
+	"github.com/SOAT-Project/hackaton-soat-processor/pkg/observability"
+	"go.uber.org/zap"
 )
 
 type ProcessVideoUseCase struct {
@@ -38,7 +41,17 @@ func NewProcessVideoUseCase(
 }
 
 func (uc *ProcessVideoUseCase) Execute(ctx context.Context, request domain.VideoProcess) error {
-	log.Printf("[UseCase] Starting video processing for process_id: %s", request.ProcessID)
+	startTime := time.Now()
+	logger := observability.GetLogger().With(
+		zap.String("process_id", request.ProcessID),
+		zap.String("video_bucket", request.VideoBucket),
+		zap.String("video_key", request.VideoKey),
+	)
+
+	observability.IncrementActiveMessages()
+	defer observability.DecrementActiveMessages()
+
+	logger.Info("starting video processing")
 
 	result := &domain.ProcessResult{
 		ProcessID: request.ProcessID,
@@ -46,39 +59,74 @@ func (uc *ProcessVideoUseCase) Execute(ctx context.Context, request domain.Video
 	}
 
 	if err := uc.validateRequest(request); err != nil {
+		logger.Error("validation failed", zap.Error(err))
+		observability.RecordError("validation")
 		result.Error = err
 		return uc.sendErrorMessage(ctx, result)
 	}
 
 	videoPath, err := uc.downloadVideo(ctx, request)
 	if err != nil {
+		logger.Error("video download failed", zap.Error(err))
+		observability.RecordError("download")
+		observability.RecordVideoProcessed(false, time.Since(startTime).Seconds(), 0)
 		result.Error = fmt.Errorf("failed to download video: %w", err)
 		return uc.sendErrorMessage(ctx, result)
 	}
 	defer os.Remove(videoPath)
 
+	// Record video file size
+	if stat, err := os.Stat(videoPath); err == nil {
+		observability.RecordFileSize("video", stat.Size())
+		logger.Info("video downloaded", zap.Int64("size_bytes", stat.Size()))
+	}
+
 	zipPath, frameCount, err := uc.videoProcessor.ProcessVideo(ctx, videoPath)
 	if err != nil {
+		logger.Error("video processing failed", zap.Error(err))
+		observability.RecordError("processing")
+		observability.RecordVideoProcessed(false, time.Since(startTime).Seconds(), 0)
 		result.Error = fmt.Errorf("failed to process video: %w", err)
 		return uc.sendErrorMessage(ctx, result)
 	}
 	defer os.Remove(zipPath)
 
-	log.Printf("[UseCase] Video processed successfully. Frames extracted: %d", frameCount)
+	logger.Info("video processed successfully", zap.Int("frames_extracted", frameCount))
+
+	// Record zip file size
+	if stat, err := os.Stat(zipPath); err == nil {
+		observability.RecordFileSize("zip", stat.Size())
+		logger.Info("zip created", zap.Int64("size_bytes", stat.Size()))
+	}
 
 	outputKey := fmt.Sprintf("processed/frames_%s.zip", request.ProcessID)
 	if err := uc.uploadZip(ctx, zipPath, outputKey); err != nil {
+		logger.Error("zip upload failed", zap.Error(err))
+		observability.RecordError("upload")
+		observability.RecordVideoProcessed(false, time.Since(startTime).Seconds(), frameCount)
 		result.Error = fmt.Errorf("failed to upload zip: %w", err)
 		return uc.sendErrorMessage(ctx, result)
 	}
 
+	logger.Info("zip uploaded successfully", zap.String("output_key", outputKey))
+
 	if err := uc.deleteOriginalVideo(ctx, request); err != nil {
-		log.Printf("[UseCase] Warning: failed to delete original video: %v", err)
+		logger.Warn("failed to delete original video", zap.Error(err))
+	} else {
+		logger.Info("original video deleted successfully")
 	}
+
+	duration := time.Since(startTime)
+	observability.RecordVideoProcessed(true, duration.Seconds(), frameCount)
 
 	result.Success = true
 	result.FileBucket = uc.outputBucket
 	result.FileKey = outputKey
+
+	logger.Info("video processing completed",
+		zap.Duration("total_duration", duration),
+		zap.Int("frames", frameCount),
+	)
 
 	return uc.sendSuccessMessage(ctx, result)
 }
@@ -102,13 +150,20 @@ func (uc *ProcessVideoUseCase) validateRequest(request domain.VideoProcess) erro
 }
 
 func (uc *ProcessVideoUseCase) downloadVideo(ctx context.Context, request domain.VideoProcess) (string, error) {
-	log.Printf("[UseCase] Downloading video from s3://%s/%s", request.VideoBucket, request.VideoKey)
+	logger := observability.GetLogger()
+	logger.Info("downloading video from S3",
+		zap.String("bucket", request.VideoBucket),
+		zap.String("key", request.VideoKey),
+	)
 
 	body, err := uc.storage.GetObject(ctx, request.VideoBucket, request.VideoKey)
 	if err != nil {
+		observability.RecordS3Operation("get", false)
 		return "", fmt.Errorf("failed to get object from storage: %w", err)
 	}
 	defer body.Close()
+
+	observability.RecordS3Operation("get", true)
 
 	tempDir := "/tmp/video-processor"
 	if err := os.MkdirAll(tempDir, 0777); err != nil {
@@ -130,12 +185,16 @@ func (uc *ProcessVideoUseCase) downloadVideo(ctx context.Context, request domain
 		return "", fmt.Errorf("failed to save video: %w", err)
 	}
 
-	log.Printf("[UseCase] Video downloaded to: %s", tempFile)
+	logger.Debug("video downloaded successfully", zap.String("path", tempFile))
 	return tempFile, nil
 }
 
 func (uc *ProcessVideoUseCase) uploadZip(ctx context.Context, zipPath, outputKey string) error {
-	log.Printf("[UseCase] Uploading ZIP to s3://%s/%s", uc.outputBucket, outputKey)
+	logger := observability.GetLogger()
+	logger.Info("uploading ZIP to S3",
+		zap.String("bucket", uc.outputBucket),
+		zap.String("key", outputKey),
+	)
 
 	file, err := os.Open(zipPath)
 	if err != nil {
@@ -145,27 +204,37 @@ func (uc *ProcessVideoUseCase) uploadZip(ctx context.Context, zipPath, outputKey
 
 	_, err = uc.storage.PutObject(ctx, uc.outputBucket, outputKey, file)
 	if err != nil {
+		observability.RecordS3Operation("put", false)
 		return fmt.Errorf("failed to put object to storage: %w", err)
 	}
 
-	log.Printf("[UseCase] ZIP uploaded successfully")
+	observability.RecordS3Operation("put", true)
 	return nil
 }
 
 func (uc *ProcessVideoUseCase) deleteOriginalVideo(ctx context.Context, request domain.VideoProcess) error {
-	log.Printf("[UseCase] Deleting original video from s3://%s/%s", request.VideoBucket, request.VideoKey)
+	logger := observability.GetLogger()
+	logger.Info("deleting original video from S3",
+		zap.String("bucket", request.VideoBucket),
+		zap.String("key", request.VideoKey),
+	)
 
 	err := uc.storage.DeleteObject(ctx, request.VideoBucket, request.VideoKey)
 	if err != nil {
+		observability.RecordS3Operation("delete", false)
 		return fmt.Errorf("failed to delete original video: %w", err)
 	}
 
-	log.Printf("[UseCase] Original video deleted successfully")
+	observability.RecordS3Operation("delete", true)
 	return nil
 }
 
 func (uc *ProcessVideoUseCase) sendSuccessMessage(ctx context.Context, result *domain.ProcessResult) error {
-	log.Printf("[UseCase] Sending success message for process_id: %s", result.ProcessID)
+	logger := observability.GetLogger()
+	logger.Info("sending success message",
+		zap.String("process_id", result.ProcessID),
+		zap.String("file_key", result.FileKey),
+	)
 
 	msgData := result.ToSuccessMessage()
 	messageBody, err := json.Marshal(msgData)
@@ -175,35 +244,43 @@ func (uc *ProcessVideoUseCase) sendSuccessMessage(ctx context.Context, result *d
 
 	messageID, err := uc.message.SendMessage(ctx, uc.outputQueueURL, string(messageBody))
 	if err != nil {
+		observability.RecordSQSOperation("send", false)
 		return fmt.Errorf("failed to send success message: %w", err)
 	}
 
-	log.Printf("[UseCase] Success message sent. MessageID: %s", messageID)
+	observability.RecordSQSOperation("send", true)
+	logger.Debug("success message sent", zap.String("message_id", messageID))
 	return nil
 }
 
 func (uc *ProcessVideoUseCase) sendErrorMessage(ctx context.Context, result *domain.ProcessResult) error {
-	log.Printf("[UseCase] Sending error message for process_id: %s. Error: %v", result.ProcessID, result.Error)
+	logger := observability.GetLogger()
+	logger.Error("sending error message",
+		zap.String("process_id", result.ProcessID),
+		zap.Error(result.Error),
+	)
 
 	msgData := result.ToErrorMessage()
 	messageBody, err := json.Marshal(msgData)
 	if err != nil {
-		log.Printf("[UseCase] Failed to marshal error message: %v", err)
+		logger.Error("failed to marshal error message", zap.Error(err))
 		return fmt.Errorf("failed to marshal error message: %w", err)
 	}
 
 	messageID, err := uc.message.SendMessage(ctx, uc.outputQueueURL, string(messageBody))
 	if err != nil {
-		log.Printf("[UseCase] Failed to send error message: %v", err)
+		observability.RecordSQSOperation("send", false)
+		logger.Error("failed to send error message", zap.Error(err))
 		return fmt.Errorf("failed to send error message: %w", err)
 	}
 
-	log.Printf("[UseCase] Error message sent. MessageID: %s", messageID)
+	observability.RecordSQSOperation("send", true)
+	logger.Debug("error message sent", zap.String("message_id", messageID))
 	return result.Error
 }
 
 func isValidVideoFile(filename string) bool {
-	ext := filepath.Ext(filename)
+	ext := strings.ToLower(filepath.Ext(filename))
 	validExts := []string{".mp4", ".avi", ".mov", ".mkv", ".wmv", ".flv", ".webm"}
 
 	for _, validExt := range validExts {

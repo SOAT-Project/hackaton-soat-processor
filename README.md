@@ -189,14 +189,62 @@ terraform plan
 terraform apply
 ```
 
-## 📊 Monitoramento
+## 📊 Observabilidade
 
-O worker registra logs detalhados sobre:
+O worker possui stack completa de observabilidade com **logs estruturados**, **métricas** e **dashboards**.
 
-- Mensagens recebidas e processadas
-- Tempo de processamento de cada vídeo
-- Erros e exceções
-- Métricas de performance
+### Componentes
+
+- **Logs**: Zap (JSON estruturado)
+- **Métricas**: Prometheus
+- **Visualização**: Grafana
+- **Health Checks**: `/health` e `/ready`
+
+### Endpoints
+
+- **Métricas**: http://localhost:8080/metrics
+- **Health Check**: http://localhost:8080/health
+- **Readiness**: http://localhost:8080/ready
+- **Prometheus UI**: http://localhost:9090
+- **Grafana**: http://localhost:3000 (admin/admin123)
+
+### Métricas Disponíveis
+
+- `worker_messages_processed_total` - Total de mensagens processadas
+- `worker_videos_processed_total` - Total de vídeos processados
+- `worker_processing_duration_seconds` - Duração do processamento (histograma)
+- `worker_frames_extracted_last` - Frames extraídos do último vídeo
+- `worker_errors_total` - Total de erros por tipo
+- `worker_s3_operations_total` - Operações S3 por tipo e status
+- `worker_sqs_operations_total` - Operações SQS por tipo e status
+- `worker_messages_active` - Mensagens sendo processadas
+- `worker_file_size_bytes` - Tamanho dos arquivos (histograma)
+
+### Dashboard Grafana
+
+O dashboard "Video Processor Worker Overview" inclui 7 painéis:
+
+1. **Processing Rate** - Taxa de processamento (vídeos/min)
+2. **Success Rate** - Porcentagem de sucesso
+3. **Processing Duration** - Percentis p50, p95, p99
+4. **Frames Extracted** - Frames do último vídeo
+5. **Errors by Type** - Erros categorizados
+6. **S3 Operations** - Operações no S3
+7. **Messages Processed** - Mensagens processadas
+
+### Iniciar Stack de Observabilidade
+
+```bash
+cd app
+docker compose up -d
+```
+
+Isso iniciará:
+- Worker (porta 8080)
+- Prometheus (porta 9090)
+- Grafana (porta 3000)
+
+Para mais detalhes, consulte [observability/SETUP.md](app/observability/SETUP.md).
 
 ## 🧪 Testes
 

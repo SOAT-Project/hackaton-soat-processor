@@ -6,4 +6,4 @@ metadata:
 data:
   QUEUE_INPUT: "hackaton-soat-process"
   QUEUE_OUTPUT: "hackaton-soat-processed"
-  STORAGE_OUTPUT: "hackaton-soat-storage"
+  STORAGE_OUTPUT: "hackaton-soat-content"

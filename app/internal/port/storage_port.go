@@ -11,6 +11,6 @@ type StoragePort interface {
 	
 	PutObject(ctx context.Context, bucket, key string, body io.Reader) (string, error)
 
-
+	
 	DeleteObject(ctx context.Context, bucket, key string) error
 }

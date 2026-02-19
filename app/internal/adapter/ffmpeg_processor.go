@@ -49,7 +49,7 @@ func (p *FFmpegVideoProcessor) ProcessVideo(ctx context.Context, videoPath strin
 
 	frames, err := filepath.Glob(filepath.Join(processDir, "*.png"))
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to list frames: %w", err)
+		return "", 0, fmt.Errorf("failed to list video frames: %w", err)
 	}
 
 	if len(frames) == 0 {

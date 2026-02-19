@@ -126,16 +126,16 @@ jobs:
           grep "^internal/" "${{ env.GO_PROJECT_PATH }}/coverage.out" | cut -d: -f1 | sort -u
           echo ""
           echo "Actual files (relative to app/):"
-          cd "${{ env.GO_PROJECT_PATH }}" && find internal -name "*.go" ! -name "*_test.go" | sort
+          find "${{ env.GO_PROJECT_PATH }}/internal" -name "*.go" ! -name "*_test.go" | sed 's|^${{ env.GO_PROJECT_PATH }}/||' | sort
           echo ""
           echo "🎯 Checking path matching:"
-          cd "${{ env.GO_PROJECT_PATH }}" && for file in $(grep "^internal/" coverage.out | cut -d: -f1 | sort -u); do
-            if [ -f "$file" ]; then
+          while IFS= read -r file; do
+            if [ -f "${{ env.GO_PROJECT_PATH }}/$file" ]; then
               echo "  ✅ $file"
             else
               echo "  ❌ $file (NOT FOUND)"
             fi
-          done
+          done < <(grep "^internal/" "${{ env.GO_PROJECT_PATH }}/coverage.out" | cut -d: -f1 | sort -u)
 
       - name: 🔍 Debug - Verify sonar-project.properties
         run: |

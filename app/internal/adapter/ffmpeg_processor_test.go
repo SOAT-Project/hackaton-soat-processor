@@ -51,15 +51,15 @@ func TestFFmpegVideoProcessor_CreateZipFile(t *testing.T) {
 	// Create test files
 	testFile1 := filepath.Join(tempDir, "file1.txt")
 	testFile2 := filepath.Join(tempDir, "file2.txt")
-	
+
 	os.WriteFile(testFile1, []byte("content 1"), 0644)
 	os.WriteFile(testFile2, []byte("content 2"), 0644)
 
 	processor := &FFmpegVideoProcessor{tempDir: tempDir}
-	
+
 	zipPath := filepath.Join(tempDir, "test.zip")
 	files := []string{testFile1, testFile2}
-	
+
 	err := processor.createZipFile(files, zipPath)
 	if err != nil {
 		t.Fatalf("createZipFile failed: %v", err)
@@ -87,10 +87,10 @@ func TestFFmpegVideoProcessor_CreateZipFile_NonexistentFile(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	processor := &FFmpegVideoProcessor{tempDir: tempDir}
-	
+
 	zipPath := filepath.Join(tempDir, "test.zip")
 	files := []string{"/nonexistent/file.txt"}
-	
+
 	err := processor.createZipFile(files, zipPath)
 	if err == nil {
 		t.Error("Expected error for nonexistent file")
@@ -157,12 +157,12 @@ func TestFFmpegVideoProcessor_Integration(t *testing.T) {
 	// In real integration tests, you would need a valid video file
 	testVideo := filepath.Join(tempDir, "test_video.mp4")
 	os.MkdirAll(tempDir, 0777)
-	
+
 	// Note: This will fail without a real video
 	// but it tests the code path
 	ctx := context.Background()
 	_, _, err := processor.(*FFmpegVideoProcessor).ProcessVideo(ctx, testVideo)
-	
+
 	// We expect this to fail since we don't have a real video
 	if err == nil {
 		t.Log("Unexpected success - test video should not exist")
@@ -210,7 +210,7 @@ func TestFFmpegVideoProcessor_ProcessVideo_NoFrames(t *testing.T) {
 	// Test with invalid video that won't produce frames
 	ctx := context.Background()
 	_, _, err := processor.ProcessVideo(ctx, "/invalid/path.mp4")
-	
+
 	if err == nil {
 		t.Error("Expected error for invalid video path")
 	}
@@ -222,9 +222,9 @@ func TestFFmpegVideoProcessor_CreateZipFile_EmptyFiles(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	processor := &FFmpegVideoProcessor{tempDir: tempDir}
-	
+
 	zipPath := filepath.Join(tempDir, "empty.zip")
-	
+
 	// Create with empty file list
 	err := processor.createZipFile([]string{}, zipPath)
 	if err != nil {
@@ -243,11 +243,8 @@ func TestFFmpegVideoProcessor_ProcessVideo_CreateDirError(t *testing.T) {
 
 	ctx := context.Background()
 	_, _, err := processor.ProcessVideo(ctx, "video.mp4")
-	
+
 	if err == nil {
 		t.Error("Expected error for invalid temp directory")
 	}
 }
-
-
-

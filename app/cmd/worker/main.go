@@ -98,6 +98,9 @@ func main() {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	logger.Info("worker initialized successfully")
+
+	// Mark server as ready to receive traffic
+	metricsServer.SetReady(true)
 	logger.Info("ready to process messages")
 
 	// Main processing loop

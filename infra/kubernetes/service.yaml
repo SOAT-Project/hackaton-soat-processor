@@ -3,10 +3,19 @@ kind: Service
 metadata:
   name: processor-service
   namespace: processor
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
 spec:
   selector:
     app: processor
   ports:
-    - protocol: TCP
+    - name: http
+      protocol: TCP
       port: 80
+      targetPort: 8080
+    - name: metrics
+      protocol: TCP
+      port: 8080
       targetPort: 8080

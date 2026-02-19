@@ -1,21 +1,27 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: backstage
-  namespace: backstage
+  name: processor
+  namespace: processor
 spec:
   parentRefs:
     - name: eg
       namespace: envoy-gateway-system
   rules:
-    - backendRefs:
+    - filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      backendRefs:
         - group: ""
           kind: Service
-          name: backstage-service
-          namespace: backstage
+          name: processor-service
+          namespace: processor
           port: 80
           weight: 1
       matches:
         - path:
             type: PathPrefix
-            value: /backstage
+            value: /processor

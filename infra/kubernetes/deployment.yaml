@@ -11,13 +11,19 @@ spec:
     metadata:
       labels:
         app: processor
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: processor
       containers:
         - name: processor
           image: soatproject/hackaton-soat-processor:latest
           ports:
-            - containerPort: 8080
+            - name: http
+              containerPort: 8080
+              protocol: TCP
           envFrom:
             - configMapRef:
                 name: processor-configmap
@@ -32,15 +38,17 @@ spec:
               memory: "2Gi"
           livenessProbe:
             httpGet:
-              path: /processor/api/actuator/health/liveness
+              path: /health
               port: 8080
-            initialDelaySeconds: 90
+            initialDelaySeconds: 30
             periodSeconds: 10
+            timeoutSeconds: 3
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /processor/api/actuator/health/readiness
+              path: /ready
               port: 8080
-            initialDelaySeconds: 90
+            initialDelaySeconds: 10
             periodSeconds: 5
+            timeoutSeconds: 3
             failureThreshold: 3

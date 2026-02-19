@@ -1,0 +1,623 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>adapter: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/SOAT-Project/hackaton-soat-processor/internal/adapter/ffmpeg_processor.go (75.5%)</option>
+				
+				<option value="file1">github.com/SOAT-Project/hackaton-soat-processor/internal/adapter/message_adapter.go (100.0%)</option>
+				
+				<option value="file2">github.com/SOAT-Project/hackaton-soat-processor/internal/adapter/storage_adapter.go (100.0%)</option>
+				
+				<option value="file3">github.com/SOAT-Project/hackaton-soat-processor/internal/application/domain/video_process.go (100.0%)</option>
+				
+				<option value="file4">github.com/SOAT-Project/hackaton-soat-processor/internal/application/usecase/process_video_usecase.go (94.2%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">no coverage</span>
+				<span class="cov1">low coverage</span>
+				<span class="cov2">*</span>
+				<span class="cov3">*</span>
+				<span class="cov4">*</span>
+				<span class="cov5">*</span>
+				<span class="cov6">*</span>
+				<span class="cov7">*</span>
+				<span class="cov8">*</span>
+				<span class="cov9">*</span>
+				<span class="cov10">high coverage</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package adapter
+
+import (
+        "archive/zip"
+        "context"
+        "fmt"
+        "io"
+        "os"
+        "os/exec"
+        "path/filepath"
+
+        "github.com/SOAT-Project/hackaton-soat-processor/internal/port"
+)
+
+type FFmpegVideoProcessor struct {
+        tempDir string
+}
+
+func NewFFmpegVideoProcessor(tempDir string) port.VideoProcessorPort <span class="cov10" title="6">{
+        if tempDir == "" </span><span class="cov4" title="2">{
+                tempDir = "temp"
+        }</span>
+
+        <span class="cov10" title="6">os.MkdirAll(tempDir, 0777)
+        return &amp;FFmpegVideoProcessor{
+                tempDir: tempDir,
+        }</span>
+}
+
+func (p *FFmpegVideoProcessor) ProcessVideo(ctx context.Context, videoPath string) (string, int, error) <span class="cov7" title="4">{
+        processDir := filepath.Join(p.tempDir, fmt.Sprintf("process_%d", os.Getpid()))
+        if err := os.MkdirAll(processDir, 0777); err != nil </span><span class="cov1" title="1">{
+                return "", 0, fmt.Errorf("failed to create process directory: %w", err)
+        }</span>
+        <span class="cov6" title="3">defer os.RemoveAll(processDir)
+
+        framePattern := filepath.Join(processDir, "frame_%04d.png")
+        cmd := exec.CommandContext(ctx, "ffmpeg",
+                "-i", videoPath,
+                "-vf", "fps=1",
+                "-y",
+                framePattern,
+        )
+
+        output, err := cmd.CombinedOutput()
+        if err != nil </span><span class="cov6" title="3">{
+                return "", 0, fmt.Errorf("ffmpeg error: %w, output: %s", err, string(output))
+        }</span>
+
+        <span class="cov0" title="0">frames, err := filepath.Glob(filepath.Join(processDir, "*.png"))
+        if err != nil </span><span class="cov0" title="0">{
+                return "", 0, fmt.Errorf("failed to list frames: %w", err)
+        }</span>
+
+        <span class="cov0" title="0">if len(frames) == 0 </span><span class="cov0" title="0">{
+                return "", 0, fmt.Errorf("no frames extracted from video")
+        }</span>
+
+        <span class="cov0" title="0">zipPath := filepath.Join(p.tempDir, fmt.Sprintf("frames_%d.zip", os.Getpid()))
+        if err := p.createZipFile(frames, zipPath); err != nil </span><span class="cov0" title="0">{
+                return "", 0, fmt.Errorf("failed to create zip: %w", err)
+        }</span>
+
+        <span class="cov0" title="0">return zipPath, len(frames), nil</span>
+}
+
+func (p *FFmpegVideoProcessor) createZipFile(files []string, zipPath string) error <span class="cov9" title="5">{
+        zipFile, err := os.Create(zipPath)
+        if err != nil </span><span class="cov1" title="1">{
+                return err
+        }</span>
+        <span class="cov7" title="4">defer zipFile.Close()
+
+        zipWriter := zip.NewWriter(zipFile)
+        defer zipWriter.Close()
+
+        for _, file := range files </span><span class="cov7" title="4">{
+                if err := p.addFileToZip(zipWriter, file); err != nil </span><span class="cov1" title="1">{
+                        return err
+                }</span>
+        }
+
+        <span class="cov6" title="3">return nil</span>
+}
+
+func (p *FFmpegVideoProcessor) addFileToZip(zipWriter *zip.Writer, filename string) error <span class="cov7" title="4">{
+        file, err := os.Open(filename)
+        if err != nil </span><span class="cov1" title="1">{
+                return err
+        }</span>
+        <span class="cov6" title="3">defer file.Close()
+
+        info, err := file.Stat()
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov6" title="3">header, err := zip.FileInfoHeader(info)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov6" title="3">header.Name = filepath.Base(filename)
+        header.Method = zip.Deflate
+
+        writer, err := zipWriter.CreateHeader(header)
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov6" title="3">_, err = io.Copy(writer, file)
+        return err</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package adapter
+
+import (
+        "context"
+
+        "github.com/SOAT-Project/hackaton-soat-processor/internal/port"
+        "github.com/SOAT-Project/hackaton-soat-processor/pkg/message"
+)
+
+type MessageAdapter struct {
+        service message.MessageService
+}
+
+func NewMessageAdapter(service message.MessageService) port.MessagePort <span class="cov9" title="9">{
+        return &amp;MessageAdapter{
+                service: service,
+        }
+}</span>
+
+func (a *MessageAdapter) SendMessage(ctx context.Context, queueURL string, messageBody string) (string, error) <span class="cov10" title="10">{
+        return a.service.SendMessage(ctx, queueURL, messageBody)
+}</span>
+</pre>
+		
+		<pre class="file" id="file2" style="display: none">package adapter
+
+import (
+        "context"
+        "io"
+
+        "github.com/SOAT-Project/hackaton-soat-processor/internal/port"
+        "github.com/SOAT-Project/hackaton-soat-processor/pkg/storage"
+)
+
+type StorageAdapter struct {
+        service storage.StorageService
+}
+
+func NewStorageAdapter(service storage.StorageService) port.StoragePort <span class="cov10" title="8">{
+        return &amp;StorageAdapter{
+                service: service,
+        }
+}</span>
+
+func (a *StorageAdapter) GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error) <span class="cov5" title="3">{
+        return a.service.GetObject(ctx, bucket, key)
+}</span>
+
+func (a *StorageAdapter) PutObject(ctx context.Context, bucket, key string, body io.Reader) (string, error) <span class="cov5" title="3">{
+        return a.service.PutObject(ctx, bucket, key, body)
+}</span>
+
+func (a *StorageAdapter) DeleteObject(ctx context.Context, bucket, key string) error <span class="cov5" title="3">{
+        return a.service.DeleteObject(ctx, bucket, key)
+}</span>
+</pre>
+		
+		<pre class="file" id="file3" style="display: none">package domain
+
+import "time"
+
+type VideoProcess struct {
+        ProcessID   string
+        VideoBucket string
+        VideoKey    string
+        CreatedAt   time.Time
+}
+
+type ProcessResult struct {
+        ProcessID  string
+        FileBucket string
+        FileKey    string
+        Success    bool
+        Error      error
+}
+
+func (r *ProcessResult) ToSuccessMessage() map[string]interface{} <span class="cov6" title="2">{
+        return map[string]interface{}{
+                "process_id":  r.ProcessID,
+                "file_bucket": r.FileBucket,
+                "file_key":    r.FileKey,
+        }
+}</span>
+
+func (r *ProcessResult) ToErrorMessage() map[string]interface{} <span class="cov10" title="3">{
+        errorMsg := "unknown error"
+        if r.Error != nil </span><span class="cov6" title="2">{
+                errorMsg = r.Error.Error()
+        }</span>
+        <span class="cov10" title="3">return map[string]interface{}{
+                "process_id":    r.ProcessID,
+                "error_message": errorMsg,
+        }</span>
+}
+</pre>
+		
+		<pre class="file" id="file4" style="display: none">package usecase
+
+import (
+        "context"
+        "encoding/json"
+        "fmt"
+        "io"
+        "os"
+        "path/filepath"
+        "strings"
+        "time"
+
+        "github.com/SOAT-Project/hackaton-soat-processor/internal/application/domain"
+        "github.com/SOAT-Project/hackaton-soat-processor/internal/port"
+        "github.com/SOAT-Project/hackaton-soat-processor/pkg/observability"
+        "go.uber.org/zap"
+)
+
+type ProcessVideoUseCase struct {
+        storage        port.StoragePort
+        message        port.MessagePort
+        videoProcessor port.VideoProcessorPort
+        outputBucket   string
+        outputQueueURL string
+}
+
+func NewProcessVideoUseCase(
+        storage port.StoragePort,
+        message port.MessagePort,
+        videoProcessor port.VideoProcessorPort,
+        outputBucket string,
+        outputQueueURL string,
+) *ProcessVideoUseCase <span class="cov6" title="12">{
+        return &amp;ProcessVideoUseCase{
+                storage:        storage,
+                message:        message,
+                videoProcessor: videoProcessor,
+                outputBucket:   outputBucket,
+                outputQueueURL: outputQueueURL,
+        }
+}</span>
+
+func (uc *ProcessVideoUseCase) Execute(ctx context.Context, request domain.VideoProcess) error <span class="cov5" title="10">{
+        startTime := time.Now()
+        logger := observability.GetLogger().With(
+                zap.String("process_id", request.ProcessID),
+                zap.String("video_bucket", request.VideoBucket),
+                zap.String("video_key", request.VideoKey),
+        )
+
+        observability.IncrementActiveMessages()
+        defer observability.DecrementActiveMessages()
+
+        logger.Info("starting video processing")
+
+        result := &amp;domain.ProcessResult{
+                ProcessID: request.ProcessID,
+                Success:   false,
+        }
+
+        if err := uc.validateRequest(request); err != nil </span><span class="cov2" title="2">{
+                logger.Error("validation failed", zap.Error(err))
+                observability.RecordError("validation")
+                result.Error = err
+                return uc.sendErrorMessage(ctx, result)
+        }</span>
+
+        <span class="cov5" title="8">videoPath, err := uc.downloadVideo(ctx, request)
+        if err != nil </span><span class="cov2" title="2">{
+                logger.Error("video download failed", zap.Error(err))
+                observability.RecordError("download")
+                observability.RecordVideoProcessed(false, time.Since(startTime).Seconds(), 0)
+                result.Error = fmt.Errorf("failed to download video: %w", err)
+                return uc.sendErrorMessage(ctx, result)
+        }</span>
+        <span class="cov4" title="6">defer os.Remove(videoPath)
+
+        // Record video file size
+        if stat, err := os.Stat(videoPath); err == nil </span><span class="cov4" title="6">{
+                observability.RecordFileSize("video", stat.Size())
+                logger.Info("video downloaded", zap.Int64("size_bytes", stat.Size()))
+        }</span>
+
+        <span class="cov4" title="6">zipPath, frameCount, err := uc.videoProcessor.ProcessVideo(ctx, videoPath)
+        if err != nil </span><span class="cov1" title="1">{
+                logger.Error("video processing failed", zap.Error(err))
+                observability.RecordError("processing")
+                observability.RecordVideoProcessed(false, time.Since(startTime).Seconds(), 0)
+                result.Error = fmt.Errorf("failed to process video: %w", err)
+                return uc.sendErrorMessage(ctx, result)
+        }</span>
+        <span class="cov4" title="5">defer os.Remove(zipPath)
+
+        logger.Info("video processed successfully", zap.Int("frames_extracted", frameCount))
+
+        // Record zip file size
+        if stat, err := os.Stat(zipPath); err == nil </span><span class="cov3" title="4">{
+                observability.RecordFileSize("zip", stat.Size())
+                logger.Info("zip created", zap.Int64("size_bytes", stat.Size()))
+        }</span>
+
+        <span class="cov4" title="5">outputKey := fmt.Sprintf("processed/frames_%s.zip", request.ProcessID)
+        if err := uc.uploadZip(ctx, zipPath, outputKey); err != nil </span><span class="cov2" title="2">{
+                logger.Error("zip upload failed", zap.Error(err))
+                observability.RecordError("upload")
+                observability.RecordVideoProcessed(false, time.Since(startTime).Seconds(), frameCount)
+                result.Error = fmt.Errorf("failed to upload zip: %w", err)
+                return uc.sendErrorMessage(ctx, result)
+        }</span>
+
+        <span class="cov3" title="3">logger.Info("zip uploaded successfully", zap.String("output_key", outputKey))
+
+        if err := uc.deleteOriginalVideo(ctx, request); err != nil </span><span class="cov1" title="1">{
+                logger.Warn("failed to delete original video", zap.Error(err))
+        }</span> else<span class="cov2" title="2"> {
+                logger.Info("original video deleted successfully")
+        }</span>
+
+        <span class="cov3" title="3">duration := time.Since(startTime)
+        observability.RecordVideoProcessed(true, duration.Seconds(), frameCount)
+
+        result.Success = true
+        result.FileBucket = uc.outputBucket
+        result.FileKey = outputKey
+
+        logger.Info("video processing completed",
+                zap.Duration("total_duration", duration),
+                zap.Int("frames", frameCount),
+        )
+
+        return uc.sendSuccessMessage(ctx, result)</span>
+}
+
+func (uc *ProcessVideoUseCase) validateRequest(request domain.VideoProcess) error <span class="cov6" title="15">{
+        if request.ProcessID == "" </span><span class="cov3" title="3">{
+                return fmt.Errorf("process_id is required")
+        }</span>
+        <span class="cov6" title="12">if request.VideoBucket == "" </span><span class="cov1" title="1">{
+                return fmt.Errorf("video_bucket is required")
+        }</span>
+        <span class="cov6" title="11">if request.VideoKey == "" </span><span class="cov1" title="1">{
+                return fmt.Errorf("video_key is required")
+        }</span>
+
+        <span class="cov5" title="10">if !isValidVideoFile(request.VideoKey) </span><span class="cov1" title="1">{
+                return fmt.Errorf("invalid video file format. Supported: mp4, avi, mov, mkv, wmv, flv, webm")
+        }</span>
+
+        <span class="cov5" title="9">return nil</span>
+}
+
+func (uc *ProcessVideoUseCase) downloadVideo(ctx context.Context, request domain.VideoProcess) (string, error) <span class="cov5" title="8">{
+        logger := observability.GetLogger()
+        logger.Info("downloading video from S3",
+                zap.String("bucket", request.VideoBucket),
+                zap.String("key", request.VideoKey),
+        )
+
+        body, err := uc.storage.GetObject(ctx, request.VideoBucket, request.VideoKey)
+        if err != nil </span><span class="cov1" title="1">{
+                observability.RecordS3Operation("get", false)
+                return "", fmt.Errorf("failed to get object from storage: %w", err)
+        }</span>
+        <span class="cov5" title="7">defer body.Close()
+
+        observability.RecordS3Operation("get", true)
+
+        tempDir := "/tmp/video-processor"
+        if err := os.MkdirAll(tempDir, 0777); err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to create temp directory: %w", err)
+        }</span>
+
+        <span class="cov5" title="7">ext := filepath.Ext(request.VideoKey)
+        tempFile := filepath.Join(tempDir, fmt.Sprintf("video_%s%s", request.ProcessID, ext))
+
+        out, err := os.Create(tempFile)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", fmt.Errorf("failed to create temp file: %w", err)
+        }</span>
+        <span class="cov5" title="7">defer out.Close()
+
+        _, err = io.Copy(out, body)
+        if err != nil </span><span class="cov1" title="1">{
+                os.Remove(tempFile)
+                return "", fmt.Errorf("failed to save video: %w", err)
+        }</span>
+
+        <span class="cov4" title="6">logger.Debug("video downloaded successfully", zap.String("path", tempFile))
+        return tempFile, nil</span>
+}
+
+func (uc *ProcessVideoUseCase) uploadZip(ctx context.Context, zipPath, outputKey string) error <span class="cov4" title="5">{
+        logger := observability.GetLogger()
+        logger.Info("uploading ZIP to S3",
+                zap.String("bucket", uc.outputBucket),
+                zap.String("key", outputKey),
+        )
+
+        file, err := os.Open(zipPath)
+        if err != nil </span><span class="cov1" title="1">{
+                return fmt.Errorf("failed to open zip file: %w", err)
+        }</span>
+        <span class="cov3" title="4">defer file.Close()
+
+        _, err = uc.storage.PutObject(ctx, uc.outputBucket, outputKey, file)
+        if err != nil </span><span class="cov1" title="1">{
+                observability.RecordS3Operation("put", false)
+                return fmt.Errorf("failed to put object to storage: %w", err)
+        }</span>
+
+        <span class="cov3" title="3">observability.RecordS3Operation("put", true)
+        return nil</span>
+}
+
+func (uc *ProcessVideoUseCase) deleteOriginalVideo(ctx context.Context, request domain.VideoProcess) error <span class="cov3" title="3">{
+        logger := observability.GetLogger()
+        logger.Info("deleting original video from S3",
+                zap.String("bucket", request.VideoBucket),
+                zap.String("key", request.VideoKey),
+        )
+
+        err := uc.storage.DeleteObject(ctx, request.VideoBucket, request.VideoKey)
+        if err != nil </span><span class="cov1" title="1">{
+                observability.RecordS3Operation("delete", false)
+                return fmt.Errorf("failed to delete original video: %w", err)
+        }</span>
+
+        <span class="cov2" title="2">observability.RecordS3Operation("delete", true)
+        return nil</span>
+}
+
+func (uc *ProcessVideoUseCase) sendSuccessMessage(ctx context.Context, result *domain.ProcessResult) error <span class="cov3" title="3">{
+        logger := observability.GetLogger()
+        logger.Info("sending success message",
+                zap.String("process_id", result.ProcessID),
+                zap.String("file_key", result.FileKey),
+        )
+
+        msgData := result.ToSuccessMessage()
+        messageBody, err := json.Marshal(msgData)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to marshal success message: %w", err)
+        }</span>
+
+        <span class="cov3" title="3">messageID, err := uc.message.SendMessage(ctx, uc.outputQueueURL, string(messageBody))
+        if err != nil </span><span class="cov1" title="1">{
+                observability.RecordSQSOperation("send", false)
+                return fmt.Errorf("failed to send success message: %w", err)
+        }</span>
+
+        <span class="cov2" title="2">observability.RecordSQSOperation("send", true)
+        logger.Debug("success message sent", zap.String("message_id", messageID))
+        return nil</span>
+}
+
+func (uc *ProcessVideoUseCase) sendErrorMessage(ctx context.Context, result *domain.ProcessResult) error <span class="cov5" title="7">{
+        logger := observability.GetLogger()
+        logger.Error("sending error message",
+                zap.String("process_id", result.ProcessID),
+                zap.Error(result.Error),
+        )
+
+        msgData := result.ToErrorMessage()
+        messageBody, err := json.Marshal(msgData)
+        if err != nil </span><span class="cov0" title="0">{
+                logger.Error("failed to marshal error message", zap.Error(err))
+                return fmt.Errorf("failed to marshal error message: %w", err)
+        }</span>
+
+        <span class="cov5" title="7">messageID, err := uc.message.SendMessage(ctx, uc.outputQueueURL, string(messageBody))
+        if err != nil </span><span class="cov0" title="0">{
+                observability.RecordSQSOperation("send", false)
+                logger.Error("failed to send error message", zap.Error(err))
+                return fmt.Errorf("failed to send error message: %w", err)
+        }</span>
+
+        <span class="cov5" title="7">observability.RecordSQSOperation("send", true)
+        logger.Debug("error message sent", zap.String("message_id", messageID))
+        return result.Error</span>
+}
+
+func isValidVideoFile(filename string) bool <span class="cov7" title="21">{
+        ext := strings.ToLower(filepath.Ext(filename))
+        validExts := []string{".mp4", ".avi", ".mov", ".mkv", ".wmv", ".flv", ".webm"}
+
+        for _, validExt := range validExts </span><span class="cov10" title="72">{
+                if ext == validExt </span><span class="cov6" title="16">{
+                        return true
+                }</span>
+        }
+        <span class="cov4" title="5">return false</span>
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>

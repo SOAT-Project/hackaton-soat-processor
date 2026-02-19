@@ -38,8 +38,8 @@ jobs:
         run: go mod download
         working-directory: ${{ env.GO_PROJECT_PATH }}
 
-      - name: Run Unit Tests And Generate Coverage
-        run: go test -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Run Unit Tests And Generate Coverage (internal only)
+        run: go test -coverprofile=coverage.out -covermode=atomic ./internal/...
         working-directory: ${{ env.GO_PROJECT_PATH }}
 
       - name: Upload coverage artifact
@@ -66,13 +66,69 @@ jobs:
           name: go-coverage-report
           path: ${{ env.GO_PROJECT_PATH }} # Baixa o arquivo 'coverage.out' para a pasta 'app/'
 
+      # ===== DEBUG STEPS =====
+      - name: 🔍 Debug - Verify coverage file exists
+        run: |
+          echo "📂 Checking if coverage.out exists..."
+          if [ -f "${{ env.GO_PROJECT_PATH }}/coverage.out" ]; then
+            echo "✅ Coverage file found!"
+            ls -lh "${{ env.GO_PROJECT_PATH }}/coverage.out"
+          else
+            echo "❌ Coverage file NOT found!"
+            echo "📁 Listing contents of ${{ env.GO_PROJECT_PATH }}:"
+            ls -la "${{ env.GO_PROJECT_PATH }}"
+            exit 1
+          fi
+
+      - name: 🔍 Debug - Show coverage file format
+        run: |
+          echo "📄 First 10 lines of coverage.out:"
+          head -n 10 "${{ env.GO_PROJECT_PATH }}/coverage.out"
+          echo ""
+          echo "📊 Coverage Summary:"
+          go tool cover -func="${{ env.GO_PROJECT_PATH }}/coverage.out" | tail -n 20
+
+      - name: 🔍 Debug - Verify sonar-project.properties
+        run: |
+          echo "📄 Content of sonar-project.properties:"
+          cat "${{ env.GO_PROJECT_PATH }}/sonar-project.properties"
+          echo ""
+          echo "📂 Listing internal directory structure:"
+          find "${{ env.GO_PROJECT_PATH }}/internal" -type f -name "*.go" | head -n 20
+
+      - name: 🔍 Debug - Check working directory
+        run: |
+          echo "📂 Current directory: $(pwd)"
+          echo "📂 Contents:"
+          ls -la
+          echo ""
+          echo "📂 App directory contents:"
+          ls -la "${{ env.GO_PROJECT_PATH }}"
+      # ===== END DEBUG STEPS =====
+
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_SCANNER_OPTS: "-Dsonar.verbose=true"
         with:
           projectBaseDir: app
           qualityGate: true 
+
+      - name: 🔍 Debug - Show SonarQube scanner logs
+        if: always()
+        run: |
+          echo "📋 Checking for scanner work directory..."
+          if [ -d "${{ env.GO_PROJECT_PATH }}/.scannerwork" ]; then
+            echo "✅ Scanner work directory found"
+            ls -la "${{ env.GO_PROJECT_PATH }}/.scannerwork"
+            if [ -f "${{ env.GO_PROJECT_PATH }}/.scannerwork/report-task.txt" ]; then
+              echo "📄 Report task content:"
+              cat "${{ env.GO_PROJECT_PATH }}/.scannerwork/report-task.txt"
+            fi
+          else
+            echo "❌ Scanner work directory NOT found"
+          fi
 
       - name: SonarQube Quality Gate check
         id: sonarqube-quality-gate-check

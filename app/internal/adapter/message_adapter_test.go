@@ -21,6 +21,7 @@ func (m *mockMessageService) SendMessage(ctx context.Context, queueURL string, m
 
 func TestNewMessageAdapter(t *testing.T) {
 	mock := &mockMessageService{}
+	
 	adapter := NewMessageAdapter(mock)
 
 	if adapter == nil {

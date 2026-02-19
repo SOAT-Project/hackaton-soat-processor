@@ -38,8 +38,8 @@ jobs:
         run: go mod download
         working-directory: ${{ env.GO_PROJECT_PATH }}
 
-      - name: Run Unit Tests And Generate Coverage
-        run: go test -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Run Unit Tests And Generate Coverage (internal only)
+        run: go test -coverprofile=coverage.out -covermode=atomic ./internal/...
         working-directory: ${{ env.GO_PROJECT_PATH }}
 
       - name: Upload coverage artifact

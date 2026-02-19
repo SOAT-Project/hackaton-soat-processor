@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/SOAT-Project/hackaton-soat-processor/internal/application/domain"
+	"github.com/SOAT-Project/hackaton-soat-processor/pkg/observability"
 )
 
 // Mock implementations for testing
@@ -238,5 +240,424 @@ func TestExecute_StorageError(t *testing.T) {
 
 	if !strings.Contains(sentMessage, "error_message") {
 		t.Errorf("Expected error message to be sent, got: %s", sentMessage)
+	}
+}
+
+func TestExecute_FullSuccess(t *testing.T) {
+	// Initialize logger
+	if err := observability.InitLogger("test"); err != nil {
+		t.Fatalf("Failed to setup logger: %v", err)
+	}
+
+	tmpFile, err := os.CreateTemp("", "test-video-*.mp4")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpFile.WriteString("fake video content")
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	zipFile, err := os.CreateTemp("", "test-zip-*.zip")
+	if err != nil {
+		t.Fatalf("Failed to create zip file: %v", err)
+	}
+	zipFile.WriteString("fake zip content")
+	zipFile.Close()
+	defer os.Remove(zipFile.Name())
+
+	storagePort := &mockStoragePort{
+		getObjectFunc: func(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
+			file, err := os.Open(tmpFile.Name())
+			return file, err
+		},
+		putObjectFunc: func(ctx context.Context, bucket, key string, body io.Reader) (string, error) {
+			return "s3://bucket/key", nil
+		},
+		deleteObjectFunc: func(ctx context.Context, bucket, key string) error {
+			return nil
+		},
+	}
+
+	messagePort := &mockMessagePort{
+		sendMessageFunc: func(ctx context.Context, queueURL string, messageBody string) (string, error) {
+			return "msg-success", nil
+		},
+	}
+
+	videoProcessor := &mockVideoProcessor{
+		processVideoFunc: func(ctx context.Context, videoPath string) (string, int, error) {
+			return zipFile.Name(), 30, nil
+		},
+	}
+
+	useCase := NewProcessVideoUseCase(storagePort, messagePort, videoProcessor, "output-bucket", "output-queue")
+
+	request := domain.VideoProcess{
+		ProcessID:   "process-123",
+		VideoBucket: "input-bucket",
+		VideoKey:    "video.mp4",
+	}
+
+	err = useCase.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+}
+
+func TestExecute_ProcessingError(t *testing.T) {
+	if err := observability.InitLogger("test"); err != nil {
+		t.Fatalf("Failed to setup logger: %v", err)
+	}
+
+	tmpFile, err := os.CreateTemp("", "test-video-*.mp4")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpFile.WriteString("fake video content")
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	storagePort := &mockStoragePort{
+		getObjectFunc: func(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
+			file, err := os.Open(tmpFile.Name())
+			return file, err
+		},
+	}
+
+	messagePort := &mockMessagePort{
+		sendMessageFunc: func(ctx context.Context, queueURL string, messageBody string) (string, error) {
+			return "msg-id", nil
+		},
+	}
+
+	videoProcessor := &mockVideoProcessor{
+		processVideoFunc: func(ctx context.Context, videoPath string) (string, int, error) {
+			return "", 0, errors.New("processing failed")
+		},
+	}
+
+	useCase := NewProcessVideoUseCase(storagePort, messagePort, videoProcessor, "output-bucket", "output-queue")
+
+	request := domain.VideoProcess{
+		ProcessID:   "process-456",
+		VideoBucket: "input-bucket",
+		VideoKey:    "video.mp4",
+	}
+
+	err = useCase.Execute(context.Background(), request)
+	if err == nil {
+		t.Fatal("Expected error from processing")
+	}
+}
+
+func TestExecute_UploadError(t *testing.T) {
+	if err := observability.InitLogger("test"); err != nil {
+		t.Fatalf("Failed to setup logger: %v", err)
+	}
+
+	tmpFile, err := os.CreateTemp("", "test-video-*.mp4")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpFile.WriteString("fake video content")
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	zipFile, err := os.CreateTemp("", "test-zip-*.zip")
+	if err != nil {
+		t.Fatalf("Failed to create zip file: %v", err)
+	}
+	zipFile.WriteString("fake zip content")
+	zipFile.Close()
+	defer os.Remove(zipFile.Name())
+
+	storagePort := &mockStoragePort{
+		getObjectFunc: func(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
+			file, err := os.Open(tmpFile.Name())
+			return file, err
+		},
+		putObjectFunc: func(ctx context.Context, bucket, key string, body io.Reader) (string, error) {
+			return "", errors.New("upload failed")
+		},
+	}
+
+	messagePort := &mockMessagePort{
+		sendMessageFunc: func(ctx context.Context, queueURL string, messageBody string) (string, error) {
+			return "msg-id", nil
+		},
+	}
+
+	videoProcessor := &mockVideoProcessor{
+		processVideoFunc: func(ctx context.Context, videoPath string) (string, int, error) {
+			return zipFile.Name(), 25, nil
+		},
+	}
+
+	useCase := NewProcessVideoUseCase(storagePort, messagePort, videoProcessor, "output-bucket", "output-queue")
+
+	request := domain.VideoProcess{
+		ProcessID:   "process-789",
+		VideoBucket: "input-bucket",
+		VideoKey:    "video.mp4",
+	}
+
+	err = useCase.Execute(context.Background(), request)
+	if err == nil {
+		t.Fatal("Expected error from upload")
+	}
+}
+
+func TestExecute_DeleteOriginalVideoError(t *testing.T) {
+	if err := observability.InitLogger("test"); err != nil {
+		t.Fatalf("Failed to setup logger: %v", err)
+	}
+
+	tmpFile, err := os.CreateTemp("", "test-video-*.mp4")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpFile.WriteString("fake video content")
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	zipFile, err := os.CreateTemp("", "test-zip-*.zip")
+	if err != nil {
+		t.Fatalf("Failed to create zip file: %v", err)
+	}
+	zipFile.WriteString("fake zip content")
+	zipFile.Close()
+	defer os.Remove(zipFile.Name())
+
+	storagePort := &mockStoragePort{
+		getObjectFunc: func(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
+			file, err := os.Open(tmpFile.Name())
+			return file, err
+		},
+		putObjectFunc: func(ctx context.Context, bucket, key string, body io.Reader) (string, error) {
+			return "s3://bucket/key", nil
+		},
+		deleteObjectFunc: func(ctx context.Context, bucket, key string) error {
+			return errors.New("delete failed")
+		},
+	}
+
+	messagePort := &mockMessagePort{
+		sendMessageFunc: func(ctx context.Context, queueURL string, messageBody string) (string, error) {
+			return "msg-success", nil
+		},
+	}
+
+	videoProcessor := &mockVideoProcessor{
+		processVideoFunc: func(ctx context.Context, videoPath string) (string, int, error) {
+			return zipFile.Name(), 20, nil
+		},
+	}
+
+	useCase := NewProcessVideoUseCase(storagePort, messagePort, videoProcessor, "output-bucket", "output-queue")
+
+	request := domain.VideoProcess{
+		ProcessID:   "process-delete",
+		VideoBucket: "input-bucket",
+		VideoKey:    "video.mp4",
+	}
+
+	// Should succeed even if delete fails
+	err = useCase.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Execute should succeed even with delete error: %v", err)
+	}
+}
+
+func TestExecute_SendSuccessMessageError(t *testing.T) {
+	if err := observability.InitLogger("test"); err != nil {
+		t.Fatalf("Failed to setup logger: %v", err)
+	}
+
+	tmpFile, err := os.CreateTemp("", "test-video-*.mp4")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpFile.WriteString("fake video content")
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	zipFile, err := os.CreateTemp("", "test-zip-*.zip")
+	if err != nil {
+		t.Fatalf("Failed to create zip file: %v", err)
+	}
+	zipFile.WriteString("fake zip content")
+	zipFile.Close()
+	defer os.Remove(zipFile.Name())
+
+	storagePort := &mockStoragePort{
+		getObjectFunc: func(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
+			file, err := os.Open(tmpFile.Name())
+			return file, err
+		},
+		putObjectFunc: func(ctx context.Context, bucket, key string, body io.Reader) (string, error) {
+			return "s3://bucket/key", nil
+		},
+		deleteObjectFunc: func(ctx context.Context, bucket, key string) error {
+			return nil
+		},
+	}
+
+	messagePort := &mockMessagePort{
+		sendMessageFunc: func(ctx context.Context, queueURL string, messageBody string) (string, error) {
+			return "", errors.New("send message failed")
+		},
+	}
+
+	videoProcessor := &mockVideoProcessor{
+		processVideoFunc: func(ctx context.Context, videoPath string) (string, int, error) {
+			return zipFile.Name(), 15, nil
+		},
+	}
+
+	useCase := NewProcessVideoUseCase(storagePort, messagePort, videoProcessor, "output-bucket", "output-queue")
+
+	request := domain.VideoProcess{
+		ProcessID:   "process-msg-error",
+		VideoBucket: "input-bucket",
+		VideoKey:    "video.mp4",
+	}
+
+	err = useCase.Execute(context.Background(), request)
+	if err == nil {
+		t.Fatal("Expected error from send message")
+	}
+}
+
+func TestExecute_SendErrorMessage_ValidationError(t *testing.T) {
+	if err := observability.InitLogger("test"); err != nil {
+		t.Fatalf("Failed to setup logger: %v", err)
+	}
+
+	messagePort := &mockMessagePort{
+		sendMessageFunc: func(ctx context.Context, queueURL string, messageBody string) (string, error) {
+			return "msg-id", nil
+		},
+	}
+
+	useCase := NewProcessVideoUseCase(nil, messagePort, nil, "output-bucket", "output-queue")
+
+	// Test with empty request to trigger validation error
+	request := domain.VideoProcess{
+		ProcessID:   "",
+		VideoBucket: "",
+		VideoKey:    "",
+	}
+
+	err := useCase.Execute(context.Background(), request)
+	if err == nil {
+		t.Fatal("Expected validation error")
+	}
+}
+
+func TestDownloadVideo_ReadError(t *testing.T) {
+	if err := observability.InitLogger("test"); err != nil {
+		t.Fatalf("Failed to setup logger: %v", err)
+	}
+
+	// Create a reader that will fail on read
+	failingReader := &failingReadCloser{}
+
+	storagePort := &mockStoragePort{
+		getObjectFunc: func(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
+			return failingReader, nil
+		},
+	}
+
+	messagePort := &mockMessagePort{
+		sendMessageFunc: func(ctx context.Context, queueURL string, messageBody string) (string, error) {
+			return "msg-id", nil
+		},
+	}
+
+	useCase := NewProcessVideoUseCase(storagePort, messagePort, nil, "output-bucket", "output-queue")
+
+	request := domain.VideoProcess{
+		ProcessID:   "test-fail-read",
+		VideoBucket: "bucket",
+		VideoKey:    "video.mp4",
+	}
+
+	err := useCase.Execute(context.Background(), request)
+	if err == nil {
+		t.Fatal("Expected error from read failure")
+	}
+}
+
+// Helper type for testing read failures
+type failingReadCloser struct{}
+
+func (f *failingReadCloser) Read(p []byte) (n int, err error) {
+	return 0, errors.New("read error")
+}
+
+func (f *failingReadCloser) Close() error {
+	return nil
+}
+
+func TestUploadZip_OpenFileError(t *testing.T) {
+	if err := observability.InitLogger("test"); err != nil {
+		t.Fatalf("Failed to setup logger: %v", err)
+	}
+
+	tmpFile, err := os.CreateTemp("", "test-video-*.mp4")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpFile.WriteString("fake video content")
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	zipFile, err := os.CreateTemp("", "test-zip-*.zip")
+	if err != nil {
+		t.Fatalf("Failed to create zip file: %v", err)
+	}
+	zipFile.WriteString("fake zip content")
+	zipFile.Close()
+	zipPath := zipFile.Name()
+	// Remove it to cause open error
+	os.Remove(zipPath)
+
+	storagePort := &mockStoragePort{
+		getObjectFunc: func(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
+			file, err := os.Open(tmpFile.Name())
+			return file, err
+		},
+		putObjectFunc: func(ctx context.Context, bucket, key string, body io.Reader) (string, error) {
+			return "s3://bucket/key", nil
+		},
+		deleteObjectFunc: func(ctx context.Context, bucket, key string) error {
+			return nil
+		},
+	}
+
+	messagePort := &mockMessagePort{
+		sendMessageFunc: func(ctx context.Context, queueURL string, messageBody string) (string, error) {
+			return "msg-success", nil
+		},
+	}
+
+	videoProcessor := &mockVideoProcessor{
+		processVideoFunc: func(ctx context.Context, videoPath string) (string, int, error) {
+			// Return the removed zip path to trigger open error
+			return zipPath, 10, nil
+		},
+	}
+
+	useCase := NewProcessVideoUseCase(storagePort, messagePort, videoProcessor, "output-bucket", "output-queue")
+
+	request := domain.VideoProcess{
+		ProcessID:   "test-open-error",
+		VideoBucket: "input-bucket",
+		VideoKey:    "video.mp4",
+	}
+
+	err = useCase.Execute(context.Background(), request)
+	if err == nil {
+		t.Fatal("Expected error from file open")
 	}
 }

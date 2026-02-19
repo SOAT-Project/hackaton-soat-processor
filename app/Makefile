@@ -23,12 +23,34 @@ test: ## Executa todos os testes
 	@echo "🧪 Executando testes..."
 	go test -v ./...
 
+test-internal: ## Executa testes apenas do diretório internal
+	@echo "🧪 Executando testes do diretório internal..."
+	go test -v ./internal/...
+
 test-cover: ## Executa testes com cobertura
 	@echo "🧪 Executando testes com cobertura..."
 	go test -cover ./...
 	go test -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "✅ Relatório de cobertura gerado: coverage.html"
+
+test-coverage-internal: ## Executa testes do internal com cobertura detalhada para SonarQube
+	@echo "🧪 Executando testes do internal com cobertura..."
+	go test -v -coverprofile=coverage.out -covermode=atomic ./internal/...
+	go tool cover -html=coverage.out -o coverage.html
+	@echo ""
+	@echo "📊 Coverage Summary:"
+	@go tool cover -func=coverage.out | tail -n 1
+	@echo ""
+	@echo "✅ Relatório HTML: coverage.html"
+	@echo "✅ Relatório SonarQube: coverage.out"
+
+sonar: test-coverage-internal ## Prepara para análise do SonarQube
+	@echo "🔍 Preparando para análise SonarQube..."
+	@echo "✅ Coverage report pronto: coverage.out"
+	@echo ""
+	@echo "Execute o SonarScanner:"
+	@echo "  sonar-scanner"
 
 clean: ## Remove binários e arquivos temporários
 	@echo "🧹 Limpando arquivos..."

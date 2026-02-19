@@ -48,6 +48,14 @@ test-coverage-internal: ## Executa testes do internal com cobertura detalhada pa
 sonar: test-coverage-internal ## Prepara para análise do SonarQube
 	@echo "🔍 Preparando para análise SonarQube..."
 	@echo "✅ Coverage report pronto: coverage.out"
+
+sonar-local: ## Executa SonarQube Scanner localmente via Docker
+	@echo "🔍 Executando SonarQube Scanner localmente..."
+	@./run-sonar-local.sh
+
+test-paths: ## Testa a transformação de paths do coverage
+	@echo "🧪 Testando transformação de paths..."
+	@./test-coverage-paths.sh
 	@echo ""
 	@echo "Execute o SonarScanner:"
 	@echo "  sonar-scanner"

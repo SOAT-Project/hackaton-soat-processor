@@ -4,6 +4,6 @@ metadata:
   name: processor-configmap
   namespace: processor
 data:
-  QUEUE_INPUT: "hackaton-soat-terraform-hackaton-process"
-  QUEUE_OUTPUT: "hackaton-soat-terraform-hackaton-processed"
+  QUEUE_INPUT: "hackaton-soat-terraform-hackaton-soat-process"
+  QUEUE_OUTPUT: "hackaton-soat-terraform-hackaton-soatprocessed"
   STORAGE_OUTPUT: "hackaton-soat-content-bucket-prod"

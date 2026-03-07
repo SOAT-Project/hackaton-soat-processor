@@ -45,7 +45,7 @@ jobs:
     if: success() && needs.set_environment.outputs.mapped_environment != ''
     uses: ./.github/workflows/docker.yaml
     with:
-      image_name: soatproject/fastfood-soat-backstage-service
+      image_name: soatproject/hackaton-soat-processor
       image_tag: latest
     secrets:
       DOCKERHUB_LOGIN: ${{ secrets.DOCKERHUB_LOGIN }}

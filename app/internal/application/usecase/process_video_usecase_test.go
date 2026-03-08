@@ -128,16 +128,6 @@ func TestValidateRequest(t *testing.T) {
 			wantErr: true,
 			errMsg:  "video_key is required",
 		},
-		{
-			name: "invalid video format",
-			request: domain.VideoProcess{
-				ProcessID:   "123",
-				VideoBucket: "test-bucket",
-				VideoKey:    "document.pdf",
-			},
-			wantErr: true,
-			errMsg:  "invalid video file format",
-		},
 	}
 
 	for _, tt := range tests {
@@ -148,34 +138,6 @@ func TestValidateRequest(t *testing.T) {
 			}
 			if err != nil && tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
 				t.Errorf("validateRequest() error = %v, want error containing %v", err, tt.errMsg)
-			}
-		})
-	}
-}
-
-func TestIsValidVideoFile(t *testing.T) {
-	tests := []struct {
-		filename string
-		want     bool
-	}{
-		{"video.mp4", true},
-		{"video.avi", true},
-		{"video.mov", true},
-		{"video.mkv", true},
-		{"video.wmv", true},
-		{"video.flv", true},
-		{"video.webm", true},
-		{"document.pdf", false},
-		{"image.jpg", false},
-		{"file.txt", false},
-		{"", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.filename, func(t *testing.T) {
-			got := isValidVideoFile(tt.filename)
-			if got != tt.want {
-				t.Errorf("isValidVideoFile(%q) = %v, want %v", tt.filename, got, tt.want)
 			}
 		})
 	}

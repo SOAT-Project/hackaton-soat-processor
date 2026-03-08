@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/SOAT-Project/hackaton-soat-processor/internal/application/domain"
@@ -142,10 +141,6 @@ func (uc *ProcessVideoUseCase) validateRequest(request domain.VideoProcess) erro
 		return fmt.Errorf("video_key is required")
 	}
 
-	if !isValidVideoFile(request.VideoKey) {
-		return fmt.Errorf("invalid video file format. Supported: mp4, avi, mov, mkv, wmv, flv, webm")
-	}
-
 	return nil
 }
 
@@ -277,16 +272,4 @@ func (uc *ProcessVideoUseCase) sendErrorMessage(ctx context.Context, result *dom
 	observability.RecordSQSOperation("send", true)
 	logger.Debug("error message sent", zap.String("message_id", messageID))
 	return result.Error
-}
-
-func isValidVideoFile(filename string) bool {
-	ext := strings.ToLower(filepath.Ext(filename))
-	validExts := []string{".mp4", ".avi", ".mov", ".mkv", ".wmv", ".flv", ".webm"}
-
-	for _, validExt := range validExts {
-		if ext == validExt {
-			return true
-		}
-	}
-	return false
 }

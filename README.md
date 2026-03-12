@@ -259,6 +259,14 @@ Para testes com cobertura:
 go test -cover ./...
 ```
 
+## Sonar
+
+Para garantia de qualidade do projeto, também foi adicionada integração com o sonar.
+
+![alt text](sonar-1.png)
+
+![alt text](sonar-2.png)
+
 ## 🤝 Contribuindo
 
 1. Fork o projeto
